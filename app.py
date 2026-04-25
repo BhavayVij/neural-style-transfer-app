@@ -14,7 +14,6 @@ st.set_page_config(page_title="Neural Style Transfer", layout="wide")
 # -------------------------
 st.title("🎨 Neural Style Transfer App")
 st.write("Transform your photos into artistic masterpieces using AI style transfer.")
-st.info("⚠️ High Quality mode may take longer on CPU")
 
 # -------------------------
 # Upload Section
@@ -31,6 +30,10 @@ quality_mode = st.selectbox(
     "Select Quality Mode",
     ["Fast (Recommended)", "High Quality"]
 )
+
+# ✅ Contextual warning (correct UX)
+if quality_mode == "High Quality":
+    st.warning("⚠️ High Quality mode may take longer on CPU")
 
 # -------------------------
 # Main Logic
@@ -55,8 +58,16 @@ if content_file and style_file:
     # -------------------------
     if st.button("✨ Generate Stylized Image"):
 
-        # Quality control
         steps = 80 if quality_mode == "Fast (Recommended)" else 200
+
+        # Progress UI
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        def update_progress(step, total):
+            percent = int((step / total) * 100)
+            progress_bar.progress(percent)
+            status_text.text(f"Processing... {percent}%")
 
         try:
             with st.spinner(f"Generating image ({quality_mode})... ⏳"):
@@ -65,7 +76,8 @@ if content_file and style_file:
                     content_img,
                     style_img,
                     style_weight,
-                    steps
+                    steps,
+                    callback=update_progress
                 )
 
                 image = output.cpu().clone().squeeze(0)
