@@ -10,7 +10,7 @@ import io
 st.set_page_config(page_title="Neural Style Transfer", layout="wide")
 
 # -------------------------
-# Title + Description
+# Title
 # -------------------------
 st.title("🎨 Neural Style Transfer App")
 st.write("Transform your photos into artistic masterpieces using AI style transfer.")
@@ -31,9 +31,7 @@ quality_mode = st.selectbox(
     ["Fast (Recommended)", "High Quality"]
 )
 
-# -------------------------
-# Show warning only when relevant
-# -------------------------
+# Contextual warning (clean UX)
 if content_file and style_file and quality_mode == "High Quality":
     st.warning("⚠️ High Quality mode may take longer on CPU")
 
@@ -60,7 +58,9 @@ if content_file and style_file:
     # -------------------------
     if st.button("✨ Generate Stylized Image"):
 
+        # Quality settings
         steps = 80 if quality_mode == "Fast (Recommended)" else 200
+        img_size = 256 if quality_mode == "Fast (Recommended)" else 384
 
         # Progress UI
         progress_bar = st.progress(0)
@@ -77,15 +77,16 @@ if content_file and style_file:
                 output = run_style_transfer(
                     content_img,
                     style_img,
-                    style_weight,
-                    steps,
+                    style_weight=style_weight,
+                    steps=steps,
+                    img_size=img_size,
                     callback=update_progress
                 )
 
                 image = output.cpu().clone().squeeze(0)
                 image = ToPILImage()(image)
 
-            # Clear progress UI after completion
+            # Clean UI
             progress_bar.empty()
             status_text.empty()
 
@@ -117,5 +118,7 @@ if content_file and style_file:
             )
 
         except Exception as e:
+            progress_bar.empty()
+            status_text.empty()
             st.error("❌ Something went wrong during processing.")
             st.exception(e)
