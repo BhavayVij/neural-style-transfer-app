@@ -31,8 +31,10 @@ quality_mode = st.selectbox(
     ["Fast (Recommended)", "High Quality"]
 )
 
-# ✅ Contextual warning (correct UX)
-if quality_mode == "High Quality":
+# -------------------------
+# Show warning only when relevant
+# -------------------------
+if content_file and style_file and quality_mode == "High Quality":
     st.warning("⚠️ High Quality mode may take longer on CPU")
 
 # -------------------------
@@ -82,6 +84,10 @@ if content_file and style_file:
 
                 image = output.cpu().clone().squeeze(0)
                 image = ToPILImage()(image)
+
+            # Clear progress UI after completion
+            progress_bar.empty()
+            status_text.empty()
 
             # -------------------------
             # Output Section
