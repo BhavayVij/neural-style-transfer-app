@@ -14,7 +14,7 @@ st.set_page_config(page_title="Neural Style Transfer", layout="wide")
 # -------------------------
 st.title("🎨 Neural Style Transfer App")
 st.write("Transform your photos into artistic masterpieces using AI style transfer.")
-st.info("⚠️ Processing may take 1–2 minutes on CPU")
+st.info("⚠️ High Quality mode may take longer on CPU")
 
 # -------------------------
 # Upload Section
@@ -23,24 +23,14 @@ content_file = st.file_uploader("Upload Content Image", type=["jpg", "png", "jpe
 style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
 
 # -------------------------
-# Slider
+# Controls
 # -------------------------
 style_weight = st.slider("Style Strength", 100000, 5000000, 1000000)
 
-# -------------------------
-# Cache Model Run (IMPORTANT)
-# -------------------------
-@st.cache_data(show_spinner=False)
-def process_image(content_bytes, style_bytes, style_weight):
-    content_img = Image.open(io.BytesIO(content_bytes)).convert("RGB")
-    style_img = Image.open(io.BytesIO(style_bytes)).convert("RGB")
-
-    output = run_style_transfer(content_img, style_img, style_weight)
-
-    image = output.cpu().clone().squeeze(0)
-    image = ToPILImage()(image)
-
-    return image
+quality_mode = st.selectbox(
+    "Select Quality Mode",
+    ["Fast (Recommended)", "High Quality"]
+)
 
 # -------------------------
 # Main Logic
@@ -55,24 +45,31 @@ if content_file and style_file:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.image(content_img, caption="Content Image", use_column_width=True)
+        st.image(content_img, caption="Content Image", use_container_width=True)
 
     with col2:
-        st.image(style_img, caption="Style Image", use_column_width=True)
+        st.image(style_img, caption="Style Image", use_container_width=True)
 
     # -------------------------
     # Generate Button
     # -------------------------
     if st.button("✨ Generate Stylized Image"):
 
-        try:
-            with st.spinner("Generating artistic image... please wait ⏳"):
+        # Quality control
+        steps = 80 if quality_mode == "Fast (Recommended)" else 200
 
-                image = process_image(
-                    content_file.getvalue(),
-                    style_file.getvalue(),
-                    style_weight
+        try:
+            with st.spinner(f"Generating image ({quality_mode})... ⏳"):
+
+                output = run_style_transfer(
+                    content_img,
+                    style_img,
+                    style_weight,
+                    steps
                 )
+
+                image = output.cpu().clone().squeeze(0)
+                image = ToPILImage()(image)
 
             # -------------------------
             # Output Section
@@ -83,10 +80,10 @@ if content_file and style_file:
             col3, col4 = st.columns(2)
 
             with col3:
-                st.image(content_img, caption="Original", use_column_width=True)
+                st.image(content_img, caption="Original", use_container_width=True)
 
             with col4:
-                st.image(image, caption="Stylized Output", use_column_width=True)
+                st.image(image, caption="Stylized Output", use_container_width=True)
 
             # -------------------------
             # Download Button
