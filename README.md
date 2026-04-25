@@ -58,17 +58,13 @@ http://localhost:8501
 ## 📸 Demo
 
 ### 🔹 Input Images
-![UI](<images ui.png>)
 
 Upload:
 
 * Content Image
-![alt text](image.png)
 * Style Image
-![alt text](image-1.png)
 
 ### 🔹 Output
-![alt text](<Screenshot 2026-04-25 212937.png>)
 * Stylized Image with adjustable intensity
 
 👉 **(Add your screenshots here after running the app)**
