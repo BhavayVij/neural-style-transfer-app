@@ -1,129 +1,127 @@
-# 🎨 Neural Style Transfer App
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torchvision.transforms as transforms
+import torchvision.models as models
+from torchvision.models import VGG19_Weights
 
-Transform your photos into artistic masterpieces using Deep Learning.
+# -------------------------
+# Device
+# -------------------------
+device = torch.device("cpu")
 
-This project implements **Neural Style Transfer (NST)** using a pre-trained **VGG19 Convolutional Neural Network**, allowing users to blend the *content* of one image with the *style* of another.
+# -------------------------
+# Image Loader
+# -------------------------
+loader = transforms.Compose([
+    transforms.Resize((384, 384)),
+    transforms.ToTensor()
+])
 
----
+# -------------------------
+# Gram Matrix
+# -------------------------
+def gram_matrix(x):
+    b, c, h, w = x.size()
+    features = x.view(b * c, h * w)
+    G = torch.mm(features, features.t())
+    return G / (b * c * h * w)
 
-## 🚀 Features
+# -------------------------
+# Style Transfer
+# -------------------------
+def run_style_transfer(content_img, style_img, style_weight=1e6, steps=80, callback=None):
 
-* 🧠 Deep Learning based style transfer (VGG19)
-* 🎚 Adjustable style strength (real-time control)
-* 🖼 Side-by-side comparison (Original vs Stylized)
-* ⚡ Interactive web app using Streamlit
-* 📥 Download generated images
-* 🎨 Works with any content and style images
+    # Preprocess
+    content_img = loader(content_img).unsqueeze(0).to(device)
+    style_img = loader(style_img).unsqueeze(0).to(device)
 
----
+    input_img = content_img.clone().requires_grad_(True)
 
-## 🧩 How It Works
+    # Load VGG19
+    cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 
-The model separates and recombines:
+    # Layers
+    content_layers = ['conv_4']
+    style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
 
-* **Content** → structure of the image
-* **Style** → textures, colors, patterns
+    model = nn.Sequential()
+    i = 0
 
-It uses:
+    # Store targets
+    content_targets = {}
+    style_targets = {}
 
-* Content Loss
-* Style Loss (Gram Matrix)
-* Optimization using LBFGS
+    # Build model and extract targets
+    for layer in cnn.children():
+        if isinstance(layer, nn.Conv2d):
+            i += 1
+            name = f'conv_{i}'
+        elif isinstance(layer, nn.ReLU):
+            name = f'relu_{i}'
+            layer = nn.ReLU(inplace=False)
+        elif isinstance(layer, nn.MaxPool2d):
+            name = f'pool_{i}'
+        else:
+            continue
 
----
+        model.add_module(name, layer)
 
-## 🛠 Tech Stack
+        if name in content_layers:
+            content_targets[name] = model(content_img).detach()
 
-* Python
-* PyTorch
-* TorchVision
-* Streamlit
-* PIL (Image Processing)
+        if name in style_layers:
+            style_targets[name] = gram_matrix(model(style_img)).detach()
 
----
+    # Optimizer
+    optimizer = optim.LBFGS([input_img])
 
-## ▶️ How to Run
+    run = [0]
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
+    # -------------------------
+    # Optimization Loop
+    # -------------------------
+    while run[0] < steps:
 
-Then open in browser:
+        def closure():
+            optimizer.zero_grad()
+            input_img.data.clamp_(0, 1)
 
-http://localhost:8501
+            x = input_img
+            i = 0
 
----
+            content_loss = 0
+            style_loss = 0
 
-## 📸 Demo
+            for layer in model.children():
+                x = layer(x)
 
-### 🔹 Input Images
+                if isinstance(layer, nn.Conv2d):
+                    i += 1
+                    name = f'conv_{i}'
 
-Upload:
+                    # Content loss
+                    if name in content_targets:
+                        content_loss += F.mse_loss(x, content_targets[name])
 
-* Content Image
-* Style Image
+                    # Style loss
+                    if name in style_targets:
+                        G = gram_matrix(x)
+                        style_loss += F.mse_loss(G, style_targets[name])
 
-### 🔹 Output
-* Stylized Image with adjustable intensity
+            loss = content_loss + style_weight * style_loss
+            loss.backward()
 
-👉 **(Add your screenshots here after running the app)**
+            run[0] += 1
 
-Example:
+            # ✅ Progress callback
+            if callback:
+                callback(run[0], steps)
 
-![UI Screenshot](images/ui.png)
-![Output Screenshot](outputs/output.png)
+            return loss
 
----
+        optimizer.step(closure)
 
-## 📁 Project Structure
-
-```
-neural-style-transfer-app/
-│
-├── app.py              # Streamlit UI
-├── model.py            # Style Transfer logic
-├── requirements.txt
-├── README.md
-│
-├── images/             # Input images
-├── outputs/            # Generated outputs
-├── notebook/           # Experiment notebook
-```
-
----
-
-## 🎯 Key Learning Outcomes
-
-* Understanding CNN feature extraction
-* Difference between content and style representation
-* Gram Matrix for style computation
-* Optimization-based image generation
-* Building interactive ML applications
-
----
-
-## ⚠️ Limitations
-
-* Slow (optimization-based approach)
-* Not real-time
-* CPU execution takes time
-* Output quality depends on input images
-
----
-
-## 🚀 Future Improvements
-
-* Fast Style Transfer (real-time)
-* GPU acceleration
-* Deploy online (Streamlit Cloud / HuggingFace)
-
----
-
-## 🙌 Author
-
-This project was built to explore Deep Learning concepts and practical AI applications using Neural Style Transfer.
-
----
-
-⭐ If you found this project useful, consider giving it a star!
+    input_img.data.clamp_(0, 1)
+    return input_img.detach()
