@@ -13,22 +13,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # -------------------------
-# Normalization (CRITICAL)
+# Normalization
 # -------------------------
-cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
-cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
+cnn_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
+cnn_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
 
 
 def normalize(img):
-    mean = cnn_normalization_mean.view(1, 3, 1, 1)
-    std = cnn_normalization_std.view(1, 3, 1, 1)
-    return (img - mean) / std
+    return (img - cnn_mean.view(1, 3, 1, 1)) / cnn_std.view(1, 3, 1, 1)
 
 
 def denormalize(img):
-    mean = cnn_normalization_mean.view(1, 3, 1, 1)
-    std = cnn_normalization_std.view(1, 3, 1, 1)
-    return img * std + mean
+    return img * cnn_std.view(1, 3, 1, 1) + cnn_mean.view(1, 3, 1, 1)
 
 
 # -------------------------
@@ -52,28 +48,28 @@ def gram_matrix(x):
 
 
 # -------------------------
-# Main NST Function
+# Main Function
 # -------------------------
 def run_style_transfer(
     content_img,
     style_img,
-    style_weight=5e5,
-    steps=120,
+    style_weight=1e6,
+    steps=300,
     img_size=384,
     callback=None
 ):
+
     loader = get_loader(img_size)
 
     content = loader(content_img).unsqueeze(0).to(device)
     style = loader(style_img).unsqueeze(0).to(device)
 
-    # Normalize
     content = normalize(content)
     style = normalize(style)
 
+    # Start from content image (stable)
     input_img = content.clone().requires_grad_(True)
 
-    # Load VGG
     cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 
     content_layers = ['conv_4']
@@ -87,7 +83,7 @@ def run_style_transfer(
     i = 0
 
     # -------------------------
-    # Build model + cache targets
+    # Build model
     # -------------------------
     for layer in cnn.children():
 
@@ -108,65 +104,55 @@ def run_style_transfer(
             content_targets[name] = model(content).detach()
 
         if name in style_layers:
-            style_targets[name] = gram_matrix(model(style)).detach()
+            target = model(style).detach()
+            style_targets[name] = gram_matrix(target)
 
     # -------------------------
-    # Loss weights (BALANCED)
+    # Optimizer (STABLE)
     # -------------------------
-    content_weight = 1
-    style_weight = style_weight
-
-    # -------------------------
-    # Optimizer (STRONGER CONFIG)
-    # -------------------------
-    optimizer = optim.LBFGS([input_img], max_iter=20)
-
-    run = [0]
+    optimizer = optim.Adam([input_img], lr=0.02)
 
     # -------------------------
     # Optimization Loop
     # -------------------------
-    while run[0] < steps:
+    for step in range(steps):
 
-        def closure():
-            optimizer.zero_grad()
+        optimizer.zero_grad()
 
-            input_img.data.clamp_(0, 1)
+        x = input_img
+        i = 0
 
-            x = input_img
-            i = 0
+        content_loss = 0
+        style_loss = 0
 
-            content_loss = 0
-            style_loss = 0
+        for layer in model.children():
+            x = layer(x)
 
-            for layer in model.children():
-                x = layer(x)
+            if isinstance(layer, nn.Conv2d):
+                i += 1
+                name = f'conv_{i}'
 
-                if isinstance(layer, nn.Conv2d):
-                    i += 1
-                    name = f'conv_{i}'
+                if name in content_targets:
+                    content_loss += F.mse_loss(x, content_targets[name])
 
-                    if name in content_targets:
-                        content_loss += F.mse_loss(x, content_targets[name])
+                if name in style_targets:
+                    G = gram_matrix(x)
+                    style_loss += F.mse_loss(G, style_targets[name])
 
-                    if name in style_targets:
-                        G = gram_matrix(x)
-                        style_loss += F.mse_loss(G, style_targets[name])
+        # Balanced loss (CRITICAL)
+        loss = content_loss + (style_weight / 1e6) * style_loss
+        loss.backward()
 
-            loss = content_weight * content_loss + style_weight * style_loss
-            loss.backward()
+        optimizer.step()
 
-            run[0] += 1
+        # Progress callback
+        if callback:
+            callback(step + 1, steps)
 
-            # Progress callback (safe)
-            if callback:
-                callback(min(run[0], steps), steps)
-
-            return loss
-
-        optimizer.step(closure)
-
-    # Denormalize output
-    output = denormalize(input_img).clamp(0, 1)
+    # -------------------------
+    # Final output
+    # -------------------------
+    output = denormalize(input_img)
+    output = torch.clamp(output, 0, 1)
 
     return output.detach()

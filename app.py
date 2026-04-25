@@ -24,16 +24,22 @@ style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
 # -------------------------
 # Controls
 # -------------------------
-style_weight = st.slider("Style Strength", 100000, 5000000, 1000000)
+style_weight = st.slider(
+    "Style Strength",
+    min_value=100000,
+    max_value=2000000,   # ⚠️ reduced upper bound (stability)
+    value=500000,
+    step=100000
+)
 
 quality_mode = st.selectbox(
     "Select Quality Mode",
     ["Fast (Recommended)", "High Quality"]
 )
 
-# Contextual warning
+# Better UX warning
 if content_file and style_file and quality_mode == "High Quality":
-    st.warning("⚠️ High Quality mode may take longer on CPU")
+    st.warning("⚠️ High Quality mode may take 1–3 minutes on CPU")
 
 # -------------------------
 # Main Logic
@@ -58,23 +64,28 @@ if content_file and style_file:
     # -------------------------
     if st.button("✨ Generate Stylized Image"):
 
-        # Quality settings
-        steps = 80 if quality_mode == "Fast (Recommended)" else 200
-        img_size = 256 if quality_mode == "Fast (Recommended)" else 384
+        # -------------------------
+        # Quality Presets (IMPORTANT)
+        # -------------------------
+        if quality_mode == "Fast (Recommended)":
+            steps = 120
+            img_size = 320
+            effective_style_weight = min(style_weight, 5e5)
 
+        else:  # High Quality
+            steps = 300
+            img_size = 384
+            effective_style_weight = style_weight
+
+        # -------------------------
         # Progress UI
+        # -------------------------
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        # ✅ SAFE PROGRESS FUNCTION
         def update_progress(step, total):
-            if total == 0:
-                percent = 0
-            else:
-                percent = int((step / total) * 100)
-
-            percent = max(0, min(percent, 100))  # clamp between 0–100
-
+            percent = int((step / total) * 100) if total > 0 else 0
+            percent = max(0, min(percent, 100))
             progress_bar.progress(percent)
             status_text.text(f"Processing... {percent}%")
 
@@ -84,13 +95,12 @@ if content_file and style_file:
                 output = run_style_transfer(
                     content_img,
                     style_img,
-                    style_weight=style_weight,
+                    style_weight=effective_style_weight,
                     steps=steps,
                     img_size=img_size,
                     callback=update_progress
                 )
 
-                # Final safety push to 100%
                 progress_bar.progress(100)
                 status_text.text("Processing... 100%")
 
