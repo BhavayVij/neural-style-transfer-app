@@ -22,14 +22,14 @@ content_file = st.file_uploader("Upload Content Image", type=["jpg", "png", "jpe
 style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
 
 # -------------------------
-# Controls
+# Controls (FIXED SCALE)
 # -------------------------
 style_weight = st.slider(
     "Style Strength",
-    min_value=100000,
-    max_value=2000000,   # ⚠️ reduced upper bound (stability)
-    value=500000,
-    step=100000
+    min_value=20000,
+    max_value=200000,
+    value=100000,
+    step=10000
 )
 
 quality_mode = st.selectbox(
@@ -37,9 +37,9 @@ quality_mode = st.selectbox(
     ["Fast (Recommended)", "High Quality"]
 )
 
-# Better UX warning
+# UX Warning
 if content_file and style_file and quality_mode == "High Quality":
-    st.warning("⚠️ High Quality mode may take 1–3 minutes on CPU")
+    st.warning("⚠️ High Quality mode may take 2–5 minutes on CPU")
 
 # -------------------------
 # Main Logic
@@ -48,6 +48,10 @@ if content_file and style_file:
 
     content_img = Image.open(content_file).convert("RGB")
     style_img = Image.open(style_file).convert("RGB")
+
+    # Optional: normalize size (better stability)
+    content_img = content_img.resize((512, 512))
+    style_img = style_img.resize((512, 512))
 
     st.subheader("🖼️ Input Images")
 
@@ -65,16 +69,16 @@ if content_file and style_file:
     if st.button("✨ Generate Stylized Image"):
 
         # -------------------------
-        # Quality Presets (IMPORTANT)
+        # Quality Presets (FINAL)
         # -------------------------
         if quality_mode == "Fast (Recommended)":
-            steps = 120
+            steps = 400
             img_size = 320
-            effective_style_weight = min(style_weight, 5e5)
+            effective_style_weight = style_weight * 0.8
 
         else:  # High Quality
-            steps = 300
-            img_size = 384
+            steps = 700
+            img_size = 512
             effective_style_weight = style_weight
 
         # -------------------------
@@ -101,6 +105,7 @@ if content_file and style_file:
                     callback=update_progress
                 )
 
+                # Force 100% at end
                 progress_bar.progress(100)
                 status_text.text("Processing... 100%")
 

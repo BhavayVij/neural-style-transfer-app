@@ -11,21 +11,17 @@ from torchvision.models import VGG19_Weights
 # -------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 # -------------------------
 # Normalization
 # -------------------------
 cnn_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
 cnn_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
 
-
 def normalize(img):
-    return (img - cnn_mean.view(1, 3, 1, 1)) / cnn_std.view(1, 3, 1, 1)
-
+    return (img - cnn_mean.view(1,3,1,1)) / cnn_std.view(1,3,1,1)
 
 def denormalize(img):
-    return img * cnn_std.view(1, 3, 1, 1) + cnn_mean.view(1, 3, 1, 1)
-
+    return img * cnn_std.view(1,3,1,1) + cnn_mean.view(1,3,1,1)
 
 # -------------------------
 # Loader
@@ -36,16 +32,21 @@ def get_loader(size):
         transforms.ToTensor()
     ])
 
-
 # -------------------------
 # Gram Matrix
 # -------------------------
 def gram_matrix(x):
     b, c, h, w = x.size()
-    features = x.view(c, h * w)
+    features = x.view(c, h*w)
     G = torch.mm(features, features.t())
-    return G / (c * h * w)
+    return G / (c*h*w)
 
+# -------------------------
+# Total Variation Loss (CRUCIAL)
+# -------------------------
+def tv_loss(img):
+    return torch.sum(torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:])) + \
+           torch.sum(torch.abs(img[:, :, :-1, :] - img[:, :, 1:, :]))
 
 # -------------------------
 # Main Function
@@ -53,8 +54,8 @@ def gram_matrix(x):
 def run_style_transfer(
     content_img,
     style_img,
-    style_weight=1e6,
-    steps=300,
+    style_weight=1e5,   # NEW SCALE (important)
+    steps=400,
     img_size=384,
     callback=None
 ):
@@ -67,13 +68,15 @@ def run_style_transfer(
     content = normalize(content)
     style = normalize(style)
 
-    # Start from content image (stable)
     input_img = content.clone().requires_grad_(True)
 
+    # -------------------------
+    # Load VGG19
+    # -------------------------
     cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 
     content_layers = ['conv_4']
-    style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
+    style_layers = ['conv_1','conv_2','conv_3','conv_4','conv_5']
 
     model = nn.Sequential().to(device)
 
@@ -104,13 +107,18 @@ def run_style_transfer(
             content_targets[name] = model(content).detach()
 
         if name in style_layers:
-            target = model(style).detach()
-            style_targets[name] = gram_matrix(target)
+            style_targets[name] = gram_matrix(model(style)).detach()
 
     # -------------------------
-    # Optimizer (STABLE)
+    # Optimizer (BETTER than LBFGS for stability)
     # -------------------------
     optimizer = optim.Adam([input_img], lr=0.02)
+
+    # -------------------------
+    # Weights (TUNED)
+    # -------------------------
+    content_weight = 1
+    tv_weight = 1e-5   # smooths noise but keeps detail
 
     # -------------------------
     # Optimization Loop
@@ -139,20 +147,26 @@ def run_style_transfer(
                     G = gram_matrix(x)
                     style_loss += F.mse_loss(G, style_targets[name])
 
-        # Balanced loss (CRITICAL)
-        loss = content_loss + (style_weight / 1e6) * style_loss
-        loss.backward()
+        # FINAL LOSS (FIXED)
+        loss = (
+            content_weight * content_loss +
+            style_weight * style_loss +
+            tv_weight * tv_loss(input_img)
+        )
 
+        loss.backward()
         optimizer.step()
 
-        # Progress callback
+        # clamp to valid range
+        input_img.data.clamp_(0, 1)
+
+        # progress
         if callback:
             callback(step + 1, steps)
 
     # -------------------------
     # Final output
     # -------------------------
-    output = denormalize(input_img)
-    output = torch.clamp(output, 0, 1)
+    output = denormalize(input_img).clamp(0, 1)
 
     return output.detach()
