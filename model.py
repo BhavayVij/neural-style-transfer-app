@@ -13,7 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # -------------------------
-# Dynamic Loader (Resolution Control)
+# Loader (Resolution Control)
 # -------------------------
 def get_loader(size):
     return transforms.Compose([
@@ -23,17 +23,17 @@ def get_loader(size):
 
 
 # -------------------------
-# Gram Matrix
+# Gram Matrix (FIXED SHAPE)
 # -------------------------
 def gram_matrix(x):
     b, c, h, w = x.size()
-    features = x.view(c, h * w)
+    features = x.view(c, h * w)   # batch assumed = 1
     G = torch.mm(features, features.t())
-    return G.div(c * h * w)
+    return G / (c * h * w)
 
 
 # -------------------------
-# Main Style Transfer Function
+# Main Function
 # -------------------------
 def run_style_transfer(
     content_img,
@@ -43,7 +43,6 @@ def run_style_transfer(
     img_size=384,
     callback=None
 ):
-    # Load + preprocess
     loader = get_loader(img_size)
 
     content_img = loader(content_img).unsqueeze(0).to(device)
@@ -51,10 +50,9 @@ def run_style_transfer(
 
     input_img = content_img.clone().requires_grad_(True)
 
-    # Load VGG19
+    # Load pretrained VGG19
     cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 
-    # Layers
     content_layers = ['conv_4']
     style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
 
@@ -66,7 +64,7 @@ def run_style_transfer(
     i = 0
 
     # -------------------------
-    # Build model + store targets ONCE
+    # Build network + cache targets
     # -------------------------
     for layer in cnn.children():
 
@@ -83,15 +81,11 @@ def run_style_transfer(
 
         model.add_module(name, layer)
 
-        # Store content target
         if name in content_layers:
-            target = model(content_img).detach()
-            content_targets[name] = target
+            content_targets[name] = model(content_img).detach()
 
-        # Store style target (GRAM MATRIX ONCE)
         if name in style_layers:
-            target = model(style_img).detach()
-            style_targets[name] = gram_matrix(target)
+            style_targets[name] = gram_matrix(model(style_img)).detach()
 
     # -------------------------
     # Optimizer
@@ -103,7 +97,7 @@ def run_style_transfer(
     # -------------------------
     # Optimization Loop
     # -------------------------
-    while run[0] <= steps:
+    while run[0] < steps:
 
         def closure():
             optimizer.zero_grad()
@@ -135,11 +129,9 @@ def run_style_transfer(
 
             run[0] += 1
 
-            # -------------------------
-            # Progress Callback
-            # -------------------------
+            # SAFE CALLBACK
             if callback:
-                callback(run[0], steps)
+                callback(min(run[0], steps), steps)
 
             return loss
 
