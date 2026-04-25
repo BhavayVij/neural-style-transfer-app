@@ -31,7 +31,7 @@ quality_mode = st.selectbox(
     ["Fast (Recommended)", "High Quality"]
 )
 
-# Contextual warning (clean UX)
+# Contextual warning
 if content_file and style_file and quality_mode == "High Quality":
     st.warning("⚠️ High Quality mode may take longer on CPU")
 
@@ -66,8 +66,15 @@ if content_file and style_file:
         progress_bar = st.progress(0)
         status_text = st.empty()
 
+        # ✅ SAFE PROGRESS FUNCTION
         def update_progress(step, total):
-            percent = int((step / total) * 100)
+            if total == 0:
+                percent = 0
+            else:
+                percent = int((step / total) * 100)
+
+            percent = max(0, min(percent, 100))  # clamp between 0–100
+
             progress_bar.progress(percent)
             status_text.text(f"Processing... {percent}%")
 
@@ -82,6 +89,10 @@ if content_file and style_file:
                     img_size=img_size,
                     callback=update_progress
                 )
+
+                # Final safety push to 100%
+                progress_bar.progress(100)
+                status_text.text("Processing... 100%")
 
                 image = output.cpu().clone().squeeze(0)
                 image = ToPILImage()(image)

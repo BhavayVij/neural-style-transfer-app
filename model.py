@@ -7,13 +7,32 @@ import torchvision.models as models
 from torchvision.models import VGG19_Weights
 
 # -------------------------
-# Device (AUTO DETECT)
+# Device
 # -------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # -------------------------
-# Loader (Resolution Control)
+# Normalization (CRITICAL)
+# -------------------------
+cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
+cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
+
+
+def normalize(img):
+    mean = cnn_normalization_mean.view(1, 3, 1, 1)
+    std = cnn_normalization_std.view(1, 3, 1, 1)
+    return (img - mean) / std
+
+
+def denormalize(img):
+    mean = cnn_normalization_mean.view(1, 3, 1, 1)
+    std = cnn_normalization_std.view(1, 3, 1, 1)
+    return img * std + mean
+
+
+# -------------------------
+# Loader
 # -------------------------
 def get_loader(size):
     return transforms.Compose([
@@ -23,34 +42,38 @@ def get_loader(size):
 
 
 # -------------------------
-# Gram Matrix (FIXED SHAPE)
+# Gram Matrix
 # -------------------------
 def gram_matrix(x):
     b, c, h, w = x.size()
-    features = x.view(c, h * w)   # batch assumed = 1
+    features = x.view(c, h * w)
     G = torch.mm(features, features.t())
     return G / (c * h * w)
 
 
 # -------------------------
-# Main Function
+# Main NST Function
 # -------------------------
 def run_style_transfer(
     content_img,
     style_img,
-    style_weight=1e6,
-    steps=80,
+    style_weight=5e5,
+    steps=120,
     img_size=384,
     callback=None
 ):
     loader = get_loader(img_size)
 
-    content_img = loader(content_img).unsqueeze(0).to(device)
-    style_img = loader(style_img).unsqueeze(0).to(device)
+    content = loader(content_img).unsqueeze(0).to(device)
+    style = loader(style_img).unsqueeze(0).to(device)
 
-    input_img = content_img.clone().requires_grad_(True)
+    # Normalize
+    content = normalize(content)
+    style = normalize(style)
 
-    # Load pretrained VGG19
+    input_img = content.clone().requires_grad_(True)
+
+    # Load VGG
     cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 
     content_layers = ['conv_4']
@@ -64,7 +87,7 @@ def run_style_transfer(
     i = 0
 
     # -------------------------
-    # Build network + cache targets
+    # Build model + cache targets
     # -------------------------
     for layer in cnn.children():
 
@@ -82,15 +105,21 @@ def run_style_transfer(
         model.add_module(name, layer)
 
         if name in content_layers:
-            content_targets[name] = model(content_img).detach()
+            content_targets[name] = model(content).detach()
 
         if name in style_layers:
-            style_targets[name] = gram_matrix(model(style_img)).detach()
+            style_targets[name] = gram_matrix(model(style)).detach()
 
     # -------------------------
-    # Optimizer
+    # Loss weights (BALANCED)
     # -------------------------
-    optimizer = optim.LBFGS([input_img])
+    content_weight = 1
+    style_weight = style_weight
+
+    # -------------------------
+    # Optimizer (STRONGER CONFIG)
+    # -------------------------
+    optimizer = optim.LBFGS([input_img], max_iter=20)
 
     run = [0]
 
@@ -124,12 +153,12 @@ def run_style_transfer(
                         G = gram_matrix(x)
                         style_loss += F.mse_loss(G, style_targets[name])
 
-            loss = content_loss + style_weight * style_loss
+            loss = content_weight * content_loss + style_weight * style_loss
             loss.backward()
 
             run[0] += 1
 
-            # SAFE CALLBACK
+            # Progress callback (safe)
             if callback:
                 callback(min(run[0], steps), steps)
 
@@ -137,4 +166,7 @@ def run_style_transfer(
 
         optimizer.step(closure)
 
-    return input_img.detach()
+    # Denormalize output
+    output = denormalize(input_img).clamp(0, 1)
+
+    return output.detach()
