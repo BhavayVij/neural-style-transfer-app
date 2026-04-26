@@ -22,14 +22,21 @@ content_file = st.file_uploader("Upload Content Image", type=["jpg", "png", "jpe
 style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
 
 # -------------------------
-# Controls (TUNED)
+# Controls (MODEL-ALIGNED)
 # -------------------------
 style_weight = st.slider(
     "Style Strength",
-    min_value=30000,
-    max_value=150000,
-    value=80000,
-    step=10000
+    min_value=100000,
+    max_value=2000000,
+    value=1000000,
+    step=100000
+)
+
+content_weight = st.slider(
+    "Content Preservation",
+    min_value=1,
+    max_value=10,
+    value=1
 )
 
 quality_mode = st.selectbox(
@@ -38,20 +45,22 @@ quality_mode = st.selectbox(
 )
 
 # -------------------------
-# UX Guidance (IMPORTANT)
+# UX Guidance
 # -------------------------
-st.caption("💡 Tip: Use paintings (Van Gogh, Picasso) for best results")
+st.caption("💡 Tip: Use strong artistic paintings (Van Gogh, Picasso) for best results")
 
 if content_file and style_file and quality_mode == "High Quality":
     st.warning("⚠️ High Quality mode may take 3–6 minutes on CPU")
 
 # -------------------------
-# Helper: Resize preserving aspect ratio
+# Helper: Resize Preview Only
 # -------------------------
-def resize_keep_ratio(img, max_size):
+def resize_preview(img, max_size=512):
     w, h = img.size
+    if max(w, h) <= max_size:
+        return img
     scale = max_size / max(w, h)
-    return img.resize((int(w * scale), int(h * scale)))
+    return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
 # -------------------------
 # Main Logic
@@ -61,19 +70,19 @@ if content_file and style_file:
     content_img = Image.open(content_file).convert("RGB")
     style_img = Image.open(style_file).convert("RGB")
 
-    # 🔥 FIX: Keep aspect ratio
-    content_img = resize_keep_ratio(content_img, 512)
-    style_img = resize_keep_ratio(style_img, 512)
+    # Preview only (no quality loss for model)
+    preview_content = resize_preview(content_img)
+    preview_style = resize_preview(style_img)
 
     st.subheader("🖼️ Input Images")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.image(content_img, caption="Content Image", use_container_width=True)
+        st.image(preview_content, caption="Content Image", use_container_width=True)
 
     with col2:
-        st.image(style_img, caption="Style Image", use_container_width=True)
+        st.image(preview_style, caption="Style Image", use_container_width=True)
 
     # -------------------------
     # Generate Button
@@ -81,17 +90,14 @@ if content_file and style_file:
     if st.button("✨ Generate Stylized Image"):
 
         # -------------------------
-        # TRUE NST PRESETS
+        # Quality Presets (REAL NST)
         # -------------------------
         if quality_mode == "Fast (Recommended)":
-            steps = 300
-            img_size = 320
-            effective_style_weight = style_weight * 0.7
-
-        else:  # High Quality
-            steps = 800   # 🔥 this is where quality comes from
+            steps = 500
+            img_size = 384
+        else:
+            steps = 1000
             img_size = 512
-            effective_style_weight = style_weight
 
         # -------------------------
         # Progress UI
@@ -100,27 +106,27 @@ if content_file and style_file:
         status_text = st.empty()
 
         def update_progress(step, total):
-            percent = int((step / total) * 100) if total > 0 else 0
+            percent = int((step / total) * 100) if total else 0
             percent = max(0, min(percent, 100))
             progress_bar.progress(percent)
             status_text.text(f"Processing... {percent}%")
 
         try:
-            with st.spinner(f"Generating image ({quality_mode})... ⏳"):
+            with st.spinner(f"Generating ({quality_mode})... ⏳"):
 
                 output = run_style_transfer(
                     content_img,
                     style_img,
-                    style_weight=effective_style_weight,
+                    style_weight=style_weight,
+                    content_weight=content_weight,
+                    tv_weight=1e-6,   # explicit (clean)
                     steps=steps,
                     img_size=img_size,
                     callback=update_progress
                 )
 
-                progress_bar.progress(100)
-                status_text.text("Processing... 100%")
-
-                image = output.cpu().clone().squeeze(0)
+                # Safe conversion
+                image = output.detach().cpu().clamp(0, 1).squeeze(0)
                 image = ToPILImage()(image)
 
             # Clean UI
@@ -136,7 +142,7 @@ if content_file and style_file:
             col3, col4 = st.columns(2)
 
             with col3:
-                st.image(content_img, caption="Original", use_container_width=True)
+                st.image(preview_content, caption="Original", use_container_width=True)
 
             with col4:
                 st.image(image, caption="Stylized Output", use_container_width=True)
@@ -157,5 +163,5 @@ if content_file and style_file:
         except Exception as e:
             progress_bar.empty()
             status_text.empty()
-            st.error("❌ Something went wrong during processing.")
+            st.error("❌ Something went wrong")
             st.exception(e)
