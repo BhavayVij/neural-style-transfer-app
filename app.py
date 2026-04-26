@@ -22,13 +22,13 @@ content_file = st.file_uploader("Upload Content Image", type=["jpg", "png", "jpe
 style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
 
 # -------------------------
-# Controls (FIXED SCALE)
+# Controls (TUNED)
 # -------------------------
 style_weight = st.slider(
     "Style Strength",
-    min_value=20000,
-    max_value=200000,
-    value=100000,
+    min_value=30000,
+    max_value=150000,
+    value=80000,
     step=10000
 )
 
@@ -37,9 +37,21 @@ quality_mode = st.selectbox(
     ["Fast (Recommended)", "High Quality"]
 )
 
-# UX Warning
+# -------------------------
+# UX Guidance (IMPORTANT)
+# -------------------------
+st.caption("💡 Tip: Use paintings (Van Gogh, Picasso) for best results")
+
 if content_file and style_file and quality_mode == "High Quality":
-    st.warning("⚠️ High Quality mode may take 2–5 minutes on CPU")
+    st.warning("⚠️ High Quality mode may take 3–6 minutes on CPU")
+
+# -------------------------
+# Helper: Resize preserving aspect ratio
+# -------------------------
+def resize_keep_ratio(img, max_size):
+    w, h = img.size
+    scale = max_size / max(w, h)
+    return img.resize((int(w * scale), int(h * scale)))
 
 # -------------------------
 # Main Logic
@@ -49,9 +61,9 @@ if content_file and style_file:
     content_img = Image.open(content_file).convert("RGB")
     style_img = Image.open(style_file).convert("RGB")
 
-    # Optional: normalize size (better stability)
-    content_img = content_img.resize((512, 512))
-    style_img = style_img.resize((512, 512))
+    # 🔥 FIX: Keep aspect ratio
+    content_img = resize_keep_ratio(content_img, 512)
+    style_img = resize_keep_ratio(style_img, 512)
 
     st.subheader("🖼️ Input Images")
 
@@ -69,15 +81,15 @@ if content_file and style_file:
     if st.button("✨ Generate Stylized Image"):
 
         # -------------------------
-        # Quality Presets (FINAL)
+        # TRUE NST PRESETS
         # -------------------------
         if quality_mode == "Fast (Recommended)":
-            steps = 400
+            steps = 300
             img_size = 320
-            effective_style_weight = style_weight * 0.8
+            effective_style_weight = style_weight * 0.7
 
         else:  # High Quality
-            steps = 700
+            steps = 800   # 🔥 this is where quality comes from
             img_size = 512
             effective_style_weight = style_weight
 
@@ -105,7 +117,6 @@ if content_file and style_file:
                     callback=update_progress
                 )
 
-                # Force 100% at end
                 progress_bar.progress(100)
                 status_text.text("Processing... 100%")
 

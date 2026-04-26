@@ -28,7 +28,7 @@ def denormalize(img):
 # -------------------------
 def get_loader(size):
     return transforms.Compose([
-        transforms.Resize((size, size)),
+        transforms.Resize(size),
         transforms.ToTensor()
     ])
 
@@ -37,12 +37,12 @@ def get_loader(size):
 # -------------------------
 def gram_matrix(x):
     b, c, h, w = x.size()
-    features = x.view(c, h*w)
+    features = x.view(c, h * w)
     G = torch.mm(features, features.t())
-    return G / (c*h*w)
+    return G / (c * h * w)
 
 # -------------------------
-# Total Variation Loss (CRUCIAL)
+# Total Variation Loss
 # -------------------------
 def tv_loss(img):
     return torch.sum(torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:])) + \
@@ -54,9 +54,10 @@ def tv_loss(img):
 def run_style_transfer(
     content_img,
     style_img,
-    style_weight=1e5,   # NEW SCALE (important)
-    steps=400,
-    img_size=384,
+    style_weight=1e6,   # tutorial uses high value
+    content_weight=1,
+    steps=500,
+    img_size=512,
     callback=None
 ):
 
@@ -68,6 +69,7 @@ def run_style_transfer(
     content = normalize(content)
     style = normalize(style)
 
+    # Start from content (stable like tutorial)
     input_img = content.clone().requires_grad_(True)
 
     # -------------------------
@@ -110,62 +112,57 @@ def run_style_transfer(
             style_targets[name] = gram_matrix(model(style)).detach()
 
     # -------------------------
-    # Optimizer (BETTER than LBFGS for stability)
+    # LBFGS Optimizer (KEY DIFFERENCE)
     # -------------------------
-    optimizer = optim.Adam([input_img], lr=0.02)
+    optimizer = optim.LBFGS([input_img])
 
-    # -------------------------
-    # Weights (TUNED)
-    # -------------------------
-    content_weight = 1
-    tv_weight = 1e-5   # smooths noise but keeps detail
+    run = [0]
 
     # -------------------------
     # Optimization Loop
     # -------------------------
-    for step in range(steps):
+    while run[0] <= steps:
 
-        optimizer.zero_grad()
+        def closure():
+            optimizer.zero_grad()
 
-        x = input_img
-        i = 0
+            input_img.data.clamp_(0, 1)
 
-        content_loss = 0
-        style_loss = 0
+            x = input_img
+            i = 0
 
-        for layer in model.children():
-            x = layer(x)
+            content_loss = 0
+            style_loss = 0
 
-            if isinstance(layer, nn.Conv2d):
-                i += 1
-                name = f'conv_{i}'
+            for layer in model.children():
+                x = layer(x)
 
-                if name in content_targets:
-                    content_loss += F.mse_loss(x, content_targets[name])
+                if isinstance(layer, nn.Conv2d):
+                    i += 1
+                    name = f'conv_{i}'
 
-                if name in style_targets:
-                    G = gram_matrix(x)
-                    style_loss += F.mse_loss(G, style_targets[name])
+                    if name in content_targets:
+                        content_loss += F.mse_loss(x, content_targets[name])
 
-        # FINAL LOSS (FIXED)
-        loss = (
-            content_weight * content_loss +
-            style_weight * style_loss +
-            tv_weight * tv_loss(input_img)
-        )
+                    if name in style_targets:
+                        G = gram_matrix(x)
+                        style_loss += F.mse_loss(G, style_targets[name])
 
-        loss.backward()
-        optimizer.step()
+            loss = content_weight * content_loss + style_weight * style_loss
 
-        # clamp to valid range
-        input_img.data.clamp_(0, 1)
+            loss.backward()
 
-        # progress
-        if callback:
-            callback(step + 1, steps)
+            run[0] += 1
+
+            if callback:
+                callback(min(run[0], steps), steps)
+
+            return loss
+
+        optimizer.step(closure)
 
     # -------------------------
-    # Final output
+    # Final Output
     # -------------------------
     output = denormalize(input_img).clamp(0, 1)
 
