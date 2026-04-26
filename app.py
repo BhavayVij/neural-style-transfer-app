@@ -1,86 +1,93 @@
 import streamlit as st
 from PIL import Image
-import tensorflow_hub as hub
-import tensorflow as tf
-import numpy as np
-import io
+import style
+import os
+import imghdr
+from io import BytesIO
+import base64
 
-st.set_page_config(page_title="Neural Style Transfer", layout="wide")
+# style image paths:
+root_style = "./images/style-images"
 
-# -------------------------
-# Load model (cached)
-# -------------------------
-@st.cache_resource
-def load_model():
-    return hub.load(
-        "https://tfhub.dev/google/magenta/arbitrary-image-stylization-v1-256/2"
-    )
 
-model = load_model()
+# download image function
+def get_image_download_link(img, file_name, style_name):
+    buffered = BytesIO()
+    img.save(buffered, format="JPEG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    href = f'<a style = "color:black" href="data:file/jpg;base64,{img_str}" download="{style_name+"_"+file_name+".jpg"}"><input type="button" value="Download"></a>'
+    return href
 
-# -------------------------
-# UI
-# -------------------------
-st.title("🎨 Neural Style Transfer")
-st.caption("Upload a photo + painting → get stylized result in seconds ⚡")
 
-content_file = st.file_uploader("Content Image", type=["jpg", "png", "jpeg"])
-style_file = st.file_uploader("Style Image", type=["jpg", "png", "jpeg"])
+st.markdown("<h1 style='text-align: center; color: Blue;'>Neural Style Transfer</h1>",
+            unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: right; color: Blue;'>by Divy Mohan Rai</h3>",
+            unsafe_allow_html=True)
 
-# -------------------------
-# Image processing
-# -------------------------
-def load_image(img, max_dim=512):
-    img = img.convert("RGB")
-    w, h = img.size
-    scale = max_dim / max(w, h)
-    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-    img = np.array(img).astype(np.float32) / 255.0
-    return tf.constant(img[np.newaxis, ...])
+main_bg = "./images/pyto.png"
+main_bg_ext = "jpg"
 
-def preview(img, max_dim=400):
-    w, h = img.size
-    scale = max_dim / max(w, h)
-    return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+st.markdown(
+    f"""
+    <style>
+    .reportview-container {{
+        background: url(data:image/{main_bg_ext};base64,{base64.b64encode(open(main_bg, "rb").read()).decode()})
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# -------------------------
-# Main
-# -------------------------
-if content_file and style_file:
 
-    content_img = Image.open(content_file)
-    style_img = Image.open(style_file)
+# creating a side bar for picking the style of image
+style_name = st.sidebar.selectbox(
+    'Select Style',
+    ("candy", "mosaic", "rain_princess", "udnie")
+)
+path_style = os.path.join(root_style, style_name+".jpg")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image(preview(content_img), caption="Content")
-    with col2:
-        st.image(preview(style_img), caption="Style")
 
-    if st.button("✨ Generate"):
+# Upload image functionality
+img = None
+uploaded_file = st.file_uploader(
+    "Choose an image...", type=["jpg", "jpeg", "png"])
 
-        with st.spinner("Applying style..."):
+show_file = st.empty()
 
-            content = load_image(content_img)
-            style = load_image(style_img)
+# checking if user has uploaded any file
+if not uploaded_file:
+    show_file.info("Please Upload an Image")
+else:
+    img = Image.open(uploaded_file)
+    # check required here if file is an image file
+    st.image(img, caption='Uploaded Image.', use_column_width=True)
+    st.image(path_style, caption='Style Image', use_column_width=True)
 
-            output = model(content, style)[0]
 
-            image = np.squeeze(output.numpy())
-            image = (image * 255).astype(np.uint8)
-            image = Image.fromarray(image)
+extensions = [".png", ".jpeg", ".jpg"]
 
-        st.subheader("🎨 Result")
-        st.image(image)
+if uploaded_file is not None and any(extension in uploaded_file.name for extension in extensions):
 
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
+    name_file = uploaded_file.name.split(".")
+    root_model = "./saved_models"
+    model_path = os.path.join(root_model, style_name+".pth")
 
-        st.download_button(
-            "Download",
-            buf.getvalue(),
-            "stylized.png",
-            "image/png"
-        )
-        
+    img = img.convert('RGB')
+    input_image = img
+
+    root_output = "./images/output-images"
+    output_image = os.path.join(
+        root_output, style_name+"-"+name_file[0]+".jpg")
+
+    stylize_button = st.button("Stylize")
+
+    if stylize_button:
+        model = style.load_model(model_path)
+        stylized = style.stylize(model, input_image, output_image)
+        # displaying the output image
+        st.write("### Output Image")
+        # image = Image.open(output_image)
+        st.image(stylized, width=400, use_column_width=True)
+        st.markdown(get_image_download_link(
+            stylized, name_file[0], style_name), unsafe_allow_html=True)
