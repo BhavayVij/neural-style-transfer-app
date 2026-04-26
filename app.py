@@ -1,7 +1,8 @@
 import streamlit as st
 from PIL import Image
-from torchvision.transforms import ToPILImage
-from model import run_style_transfer
+import tensorflow_hub as hub
+import tensorflow as tf
+import numpy as np
 import io
 
 # -------------------------
@@ -10,57 +11,57 @@ import io
 st.set_page_config(page_title="Neural Style Transfer", layout="wide")
 
 # -------------------------
+# Load Model ONCE (cached)
+# -------------------------
+@st.cache_resource
+def load_model():
+    return hub.load(
+        "https://tfhub.dev/google/magenta/arbitrary-image-stylization-v1-256/2"
+    )
+
+model = load_model()
+
+# -------------------------
 # Title
 # -------------------------
 st.title("🎨 Neural Style Transfer App")
 st.write("Transform your photos into artistic masterpieces using AI style transfer.")
 
+st.caption("💡 Tip: Use strong paintings (Van Gogh, Picasso) for best results")
+
 # -------------------------
-# Upload Section
+# Upload
 # -------------------------
 content_file = st.file_uploader("Upload Content Image", type=["jpg", "png", "jpeg"])
 style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
 
-# -------------------------
-# Controls (MODEL-ALIGNED)
-# -------------------------
-style_weight = st.slider(
-    "Style Strength",
-    min_value=100000,
-    max_value=2000000,
-    value=1000000,
-    step=100000
-)
-
-content_weight = st.slider(
-    "Content Preservation",
-    min_value=1,
-    max_value=10,
-    value=1
-)
-
-quality_mode = st.selectbox(
-    "Select Quality Mode",
-    ["Fast (Recommended)", "High Quality"]
-)
 
 # -------------------------
-# UX Guidance
+# Resize (NO DISTORTION)
 # -------------------------
-st.caption("💡 Tip: Use strong artistic paintings (Van Gogh, Picasso) for best results")
+def load_image(img, max_dim=512):
+    img = img.convert("RGB")
 
-if content_file and style_file and quality_mode == "High Quality":
-    st.warning("⚠️ High Quality mode may take 3–6 minutes on CPU")
-
-# -------------------------
-# Helper: Resize Preview Only
-# -------------------------
-def resize_preview(img, max_size=512):
     w, h = img.size
-    if max(w, h) <= max_size:
-        return img
-    scale = max_size / max(w, h)
+    scale = max_dim / max(w, h)
+    new_w, new_h = int(w * scale), int(h * scale)
+
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    img = np.array(img).astype(np.float32) / 255.0
+    img = img[np.newaxis, ...]
+
+    return tf.constant(img)
+
+
+# -------------------------
+# Preview Resize (UI only)
+# -------------------------
+def preview(img, max_dim=400):
+    w, h = img.size
+    scale = max_dim / max(w, h)
     return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
 
 # -------------------------
 # Main Logic
@@ -70,71 +71,53 @@ if content_file and style_file:
     content_img = Image.open(content_file).convert("RGB")
     style_img = Image.open(style_file).convert("RGB")
 
-    # Preview only (no quality loss for model)
-    preview_content = resize_preview(content_img)
-    preview_style = resize_preview(style_img)
-
     st.subheader("🖼️ Input Images")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.image(preview_content, caption="Content Image", use_container_width=True)
+        st.image(preview(content_img), caption="Content Image")
 
     with col2:
-        st.image(preview_style, caption="Style Image", use_container_width=True)
+        st.image(preview(style_img), caption="Style Image")
 
     # -------------------------
     # Generate Button
     # -------------------------
     if st.button("✨ Generate Stylized Image"):
 
-        # -------------------------
-        # Quality Presets (REAL NST)
-        # -------------------------
-        if quality_mode == "Fast (Recommended)":
-            steps = 500
-            img_size = 384
-        else:
-            steps = 1000
-            img_size = 512
-
-        # -------------------------
-        # Progress UI
-        # -------------------------
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        def update_progress(step, total):
-            percent = int((step / total) * 100) if total else 0
-            percent = max(0, min(percent, 100))
-            progress_bar.progress(percent)
-            status_text.text(f"Processing... {percent}%")
+        progress = st.progress(0)
+        status = st.empty()
 
         try:
-            with st.spinner(f"Generating ({quality_mode})... ⏳"):
+            with st.spinner("Generating... ⚡"):
 
-                output = run_style_transfer(
-                    content_img,
-                    style_img,
-                    style_weight=style_weight,
-                    content_weight=content_weight,
-                    tv_weight=1e-6,   # explicit (clean)
-                    steps=steps,
-                    img_size=img_size,
-                    callback=update_progress
-                )
+                progress.progress(10)
+                status.text("Preparing images...")
 
-                # Safe conversion
-                image = output.detach().cpu().clamp(0, 1).squeeze(0)
-                image = ToPILImage()(image)
+                content = load_image(content_img, 512)
+                style = load_image(style_img, 512)
 
-            # Clean UI
-            progress_bar.empty()
-            status_text.empty()
+                progress.progress(40)
+                status.text("Applying style...")
+
+                output = model(content, style)[0]
+
+                progress.progress(80)
+                status.text("Rendering result...")
+
+                image = np.squeeze(output.numpy())
+                image = (image * 255).astype(np.uint8)
+                image = Image.fromarray(image)
+
+                progress.progress(100)
+                status.text("Done!")
+
+            progress.empty()
+            status.empty()
 
             # -------------------------
-            # Output Section
+            # Output
             # -------------------------
             st.subheader("🎨 Result")
             st.success("Style Transfer Complete!")
@@ -142,26 +125,26 @@ if content_file and style_file:
             col3, col4 = st.columns(2)
 
             with col3:
-                st.image(preview_content, caption="Original", use_container_width=True)
+                st.image(preview(content_img), caption="Original")
 
             with col4:
-                st.image(image, caption="Stylized Output", use_container_width=True)
+                st.image(image, caption="Stylized Output")
 
             # -------------------------
-            # Download Button
+            # Download
             # -------------------------
             buf = io.BytesIO()
             image.save(buf, format="PNG")
 
             st.download_button(
-                label="📥 Download Stylized Image",
-                data=buf.getvalue(),
-                file_name="stylized_output.png",
-                mime="image/png"
+                "📥 Download Image",
+                buf.getvalue(),
+                "stylized_output.png",
+                "image/png"
             )
 
         except Exception as e:
-            progress_bar.empty()
-            status_text.empty()
+            progress.empty()
+            status.empty()
             st.error("❌ Something went wrong")
             st.exception(e)
