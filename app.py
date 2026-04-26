@@ -6,7 +6,7 @@ from io import BytesIO
 import base64
 
 # style image paths:
-root_style = "./images/style-images"
+root_style = "images/style-images"
 
 
 # download image function
