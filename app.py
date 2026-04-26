@@ -20,23 +20,9 @@ def get_image_download_link(img, file_name, style_name):
 
 st.markdown("<h1 style='text-align: center; color: Blue;'>Neural Style Transfer</h1>",
             unsafe_allow_html=True)
-st.markdown("<h3 style='text-align: right; color: Blue;'>by Divy Mohan Rai</h3>",
+st.markdown("<h3 style='text-align: right; color: Blue;'>by Bhavay Vij</h3>",
             unsafe_allow_html=True)
 
-
-main_bg = "./images/pyto.png"
-main_bg_ext = "jpg"
-
-st.markdown(
-    f"""
-    <style>
-    .reportview-container {{
-        background: url(data:image/{main_bg_ext};base64,{base64.b64encode(open(main_bg, "rb").read()).decode()})
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 
 # creating a side bar for picking the style of image
