@@ -2,7 +2,6 @@ import streamlit as st
 from PIL import Image
 import style
 import os
-import imghdr
 from io import BytesIO
 import base64
 
