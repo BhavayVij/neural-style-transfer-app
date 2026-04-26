@@ -6,7 +6,9 @@ from io import BytesIO
 import base64
 
 # style image paths:
-root_style = "images/style-images"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+root_style = os.path.join(BASE_DIR, "images", "style-images")
+root_model = os.path.join(BASE_DIR, "saved_models")
 
 
 # download image function
