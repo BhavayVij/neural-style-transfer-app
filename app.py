@@ -47,7 +47,8 @@ else:
     img = Image.open(uploaded_file)
     # check required here if file is an image file
     st.image(img, caption='Uploaded Image.', use_column_width=True)
-    st.image(path_style, caption='Style Image', use_column_width=True)
+    style_image = Image.open(path_style)
+    st.image(style_image, caption='Style Image', use_column_width=True)
 
 
 extensions = [".png", ".jpeg", ".jpg"]
