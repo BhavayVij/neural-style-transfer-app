@@ -5,13 +5,10 @@ import tensorflow as tf
 import numpy as np
 import io
 
-# -------------------------
-# Page Config
-# -------------------------
 st.set_page_config(page_title="Neural Style Transfer", layout="wide")
 
 # -------------------------
-# Load Model ONCE (cached)
+# Load model (cached)
 # -------------------------
 @st.cache_resource
 def load_model():
@@ -22,129 +19,68 @@ def load_model():
 model = load_model()
 
 # -------------------------
-# Title
+# UI
 # -------------------------
-st.title("🎨 Neural Style Transfer App")
-st.write("Transform your photos into artistic masterpieces using AI style transfer.")
+st.title("🎨 Neural Style Transfer")
+st.caption("Upload a photo + painting → get stylized result in seconds ⚡")
 
-st.caption("💡 Tip: Use strong paintings (Van Gogh, Picasso) for best results")
-
-# -------------------------
-# Upload
-# -------------------------
-content_file = st.file_uploader("Upload Content Image", type=["jpg", "png", "jpeg"])
-style_file = st.file_uploader("Upload Style Image", type=["jpg", "png", "jpeg"])
-
+content_file = st.file_uploader("Content Image", type=["jpg", "png", "jpeg"])
+style_file = st.file_uploader("Style Image", type=["jpg", "png", "jpeg"])
 
 # -------------------------
-# Resize (NO DISTORTION)
+# Image processing
 # -------------------------
 def load_image(img, max_dim=512):
     img = img.convert("RGB")
-
     w, h = img.size
     scale = max_dim / max(w, h)
-    new_w, new_h = int(w * scale), int(h * scale)
-
-    img = img.resize((new_w, new_h), Image.LANCZOS)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
     img = np.array(img).astype(np.float32) / 255.0
-    img = img[np.newaxis, ...]
+    return tf.constant(img[np.newaxis, ...])
 
-    return tf.constant(img)
-
-
-# -------------------------
-# Preview Resize (UI only)
-# -------------------------
 def preview(img, max_dim=400):
     w, h = img.size
     scale = max_dim / max(w, h)
     return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-
 # -------------------------
-# Main Logic
+# Main
 # -------------------------
 if content_file and style_file:
 
-    content_img = Image.open(content_file).convert("RGB")
-    style_img = Image.open(style_file).convert("RGB")
-
-    st.subheader("🖼️ Input Images")
+    content_img = Image.open(content_file)
+    style_img = Image.open(style_file)
 
     col1, col2 = st.columns(2)
-
     with col1:
-        st.image(preview(content_img), caption="Content Image")
-
+        st.image(preview(content_img), caption="Content")
     with col2:
-        st.image(preview(style_img), caption="Style Image")
+        st.image(preview(style_img), caption="Style")
 
-    # -------------------------
-    # Generate Button
-    # -------------------------
-    if st.button("✨ Generate Stylized Image"):
+    if st.button("✨ Generate"):
 
-        progress = st.progress(0)
-        status = st.empty()
+        with st.spinner("Applying style..."):
 
-        try:
-            with st.spinner("Generating... ⚡"):
+            content = load_image(content_img)
+            style = load_image(style_img)
 
-                progress.progress(10)
-                status.text("Preparing images...")
+            output = model(content, style)[0]
 
-                content = load_image(content_img, 512)
-                style = load_image(style_img, 512)
+            image = np.squeeze(output.numpy())
+            image = (image * 255).astype(np.uint8)
+            image = Image.fromarray(image)
 
-                progress.progress(40)
-                status.text("Applying style...")
+        st.subheader("🎨 Result")
+        st.image(image)
 
-                output = model(content, style)[0]
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
 
-                progress.progress(80)
-                status.text("Rendering result...")
-
-                image = np.squeeze(output.numpy())
-                image = (image * 255).astype(np.uint8)
-                image = Image.fromarray(image)
-
-                progress.progress(100)
-                status.text("Done!")
-
-            progress.empty()
-            status.empty()
-
-            # -------------------------
-            # Output
-            # -------------------------
-            st.subheader("🎨 Result")
-            st.success("Style Transfer Complete!")
-
-            col3, col4 = st.columns(2)
-
-            with col3:
-                st.image(preview(content_img), caption="Original")
-
-            with col4:
-                st.image(image, caption="Stylized Output")
-
-            # -------------------------
-            # Download
-            # -------------------------
-            buf = io.BytesIO()
-            image.save(buf, format="PNG")
-
-            st.download_button(
-                "📥 Download Image",
-                buf.getvalue(),
-                "stylized_output.png",
-                "image/png"
-            )
-
-        except Exception as e:
-            progress.empty()
-            status.empty()
-            st.error("❌ Something went wrong")
-            st.exception(e)
+        st.download_button(
+            "Download",
+            buf.getvalue(),
+            "stylized.png",
+            "image/png"
+        )
+        
