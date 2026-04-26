@@ -12,7 +12,7 @@ from torchvision.models import VGG19_Weights
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # -------------------------
-# Normalization Module (MANDATORY)
+# Normalization Module
 # -------------------------
 class Normalization(nn.Module):
     def __init__(self, mean, std):
@@ -24,21 +24,31 @@ class Normalization(nn.Module):
         return (img - self.mean) / self.std
 
 
-# ImageNet stats
 cnn_mean = [0.485, 0.456, 0.406]
 cnn_std = [0.229, 0.224, 0.225]
 
 # -------------------------
-# Gram Matrix (CORRECT)
+# Safe Image Loader (FIXED)
+# -------------------------
+def load_image(img, size):
+    transform = transforms.Compose([
+        transforms.Resize(size),
+        transforms.CenterCrop(size),   # 🔥 CRITICAL FIX
+        transforms.ToTensor()
+    ])
+    return transform(img).unsqueeze(0)
+
+# -------------------------
+# Gram Matrix
 # -------------------------
 def gram_matrix(x):
     b, c, h, w = x.size()
     features = x.view(c, h * w)
     G = torch.mm(features, features.t())
-    return G.div(c * h * w)
+    return G / (c * h * w)
 
 # -------------------------
-# Content Loss
+# Loss Modules
 # -------------------------
 class ContentLoss(nn.Module):
     def __init__(self, target):
@@ -49,9 +59,7 @@ class ContentLoss(nn.Module):
         self.loss = F.mse_loss(input, self.target)
         return input
 
-# -------------------------
-# Style Loss
-# -------------------------
+
 class StyleLoss(nn.Module):
     def __init__(self, target_feature):
         super().__init__()
@@ -63,20 +71,11 @@ class StyleLoss(nn.Module):
         return input
 
 # -------------------------
-# Total Variation Loss (light smoothing)
+# Total Variation Loss
 # -------------------------
 def tv_loss(img):
     return torch.sum(torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:])) + \
            torch.sum(torch.abs(img[:, :, :-1, :] - img[:, :, 1:, :]))
-
-# -------------------------
-# Loader (keeps aspect ratio)
-# -------------------------
-def get_loader(size):
-    return transforms.Compose([
-        transforms.Resize(size),
-        transforms.ToTensor()
-    ])
 
 # -------------------------
 # Main Function
@@ -92,29 +91,31 @@ def run_style_transfer(
     callback=None
 ):
 
-    loader = get_loader(img_size)
+    # -------------------------
+    # Load images (SAFE)
+    # -------------------------
+    content = load_image(content_img_pil, img_size).to(device)
+    style = load_image(style_img_pil, img_size).to(device)
 
-    content = loader(content_img_pil).unsqueeze(0).to(device)
-    style = loader(style_img_pil).unsqueeze(0).to(device)
-
-    # Start from content image
     input_img = content.clone().requires_grad_(True)
 
+    # -------------------------
     # Load VGG19
+    # -------------------------
     cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 
-    # Layers
     content_layers = ['conv_4']
     style_layers = ['conv_1','conv_2','conv_3','conv_4','conv_5']
 
-    # Build model
     normalization = Normalization(cnn_mean, cnn_std).to(device)
+
     model = nn.Sequential(normalization)
 
     content_losses = []
     style_losses = []
 
     i = 0
+
     for layer in cnn.children():
 
         if isinstance(layer, nn.Conv2d):
@@ -142,7 +143,9 @@ def run_style_transfer(
             model.add_module(f"style_loss_{i}", style_loss)
             style_losses.append(style_loss)
 
-    # Optimizer (tutorial standard)
+    # -------------------------
+    # Optimizer (BEST QUALITY)
+    # -------------------------
     optimizer = optim.LBFGS([input_img])
 
     run = [0]
@@ -150,7 +153,7 @@ def run_style_transfer(
     # -------------------------
     # Optimization Loop
     # -------------------------
-    while run[0] <= steps:
+    while run[0] < steps:
 
         def closure():
             optimizer.zero_grad()
@@ -174,13 +177,12 @@ def run_style_transfer(
             run[0] += 1
 
             if callback:
-                callback(min(run[0], steps), steps)
+                callback(run[0], steps)
 
             return loss
 
         optimizer.step(closure)
 
-    # Final clamp
     with torch.no_grad():
         input_img.clamp_(0, 1)
 
