@@ -1,5 +1,5 @@
 streamlit
-torch
-torchvision
+tensorflow==2.15
+tensorflow-hub
+numpy
 pillow
-matplotlib
