@@ -28,12 +28,39 @@ st.markdown("<h3 style='text-align: right; color: Blue;'>by Bhavay Vij</h3>",
 
 
 # creating a side bar for picking the style of image
+# Get all style images
+style_files = [f for f in os.listdir(root_style) if f.endswith((".jpg", ".png", ".jpeg"))]
+
+valid_styles = []
+
+for file in style_files:
+    name = os.path.splitext(file)[0]
+    model_path = os.path.join(root_model, name + ".pth")
+    
+    if os.path.exists(model_path):
+        valid_styles.append(name)
+
+# Sort for clean UI
+valid_styles.sort()
+
+# Dropdown
 style_name = st.sidebar.selectbox(
-    'Select Style',
-    ("candy", "mosaic", "rain_princess", "udnie",
-     "tg", "demon_slayer", "ben_giles", "ben_giles_2")
+    "Select Style",
+    valid_styles
 )
-path_style = os.path.join(root_style, style_name+".jpg")
+# find correct extension
+possible_extensions = [".jpg", ".png", ".jpeg"]
+
+path_style = None
+for ext in possible_extensions:
+    temp_path = os.path.join(root_style, style_name + ext)
+    if os.path.exists(temp_path):
+        path_style = temp_path
+        break
+
+if path_style is None:
+    st.error(f"Style image for '{style_name}' not found!")
+    st.stop()
 
 st.sidebar.image(path_style, caption=style_name)
 
