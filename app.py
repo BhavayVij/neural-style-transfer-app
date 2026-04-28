@@ -4,6 +4,7 @@ import style
 import os
 from io import BytesIO
 import base64
+from streamlit_image_comparison import image_comparison
 
 # style image paths:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,9 +74,26 @@ if uploaded_file is not None and any(extension in uploaded_file.name for extensi
     if stylize_button:
         model = style.load_model(model_path)
         stylized = style.stylize(model, input_image, output_image)
-        # displaying the output image
+
+        input_resized = input_image.resize(stylized.size)
+
+        st.write("### 🔍 Comparison: Original vs Stylized")
+        st.caption("Drag the slider to compare the transformation")
+
+        image_comparison(
+            img1=input_resized,
+            img2=stylized,
+            label1="Original",
+            label2="Stylized",
+            width=700,
+            starting_position=50,
+            show_labels=True,
+            make_responsive=True,
+            in_memory=True
+        )
+
         st.write("### Output Image")
-        # image = Image.open(output_image)
-        st.image(stylized, width=400, use_column_width=True)
+        st.image(stylized, use_column_width=True)
+
         st.markdown(get_image_download_link(
             stylized, name_file[0], style_name), unsafe_allow_html=True)

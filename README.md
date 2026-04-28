@@ -1,127 +1,164 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-import torchvision.transforms as transforms
-import torchvision.models as models
-from torchvision.models import VGG19_Weights
+# 🎨 Neural Style Transfer App
 
-# -------------------------
-# Device
-# -------------------------
-device = torch.device("cpu")
+A deep learning application that transforms ordinary images into artistic styles using Neural Style Transfer.
+Built with **PyTorch** and **Streamlit**, this project demonstrates both **real-time inference** and **optimization-based style transfer** techniques.
 
-# -------------------------
-# Image Loader
-# -------------------------
-loader = transforms.Compose([
-    transforms.Resize((384, 384)),
-    transforms.ToTensor()
-])
+---
 
-# -------------------------
-# Gram Matrix
-# -------------------------
-def gram_matrix(x):
-    b, c, h, w = x.size()
-    features = x.view(b * c, h * w)
-    G = torch.mm(features, features.t())
-    return G / (b * c * h * w)
+## 🔗 Live Demo
 
-# -------------------------
-# Style Transfer
-# -------------------------
-def run_style_transfer(content_img, style_img, style_weight=1e6, steps=80, callback=None):
+👉 https://neural-style-transfer-app-hkazyhuftibcmwqxgujnog.streamlit.app/
 
-    # Preprocess
-    content_img = loader(content_img).unsqueeze(0).to(device)
-    style_img = loader(style_img).unsqueeze(0).to(device)
+---
 
-    input_img = content_img.clone().requires_grad_(True)
+## 🚀 Features
 
-    # Load VGG19
-    cnn = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
+* Upload any image and apply artistic styles instantly
+* Multiple pre-trained styles:
 
-    # Layers
-    content_layers = ['conv_4']
-    style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
+  * Candy
+  * Mosaic
+  * Rain Princess
+  * Udnie
+* Fast style transfer using feed-forward neural networks
+* Optimization-based style transfer using VGG19
+* Download stylized output
+* Clean and interactive Streamlit UI
 
-    model = nn.Sequential()
-    i = 0
+---
 
-    # Store targets
-    content_targets = {}
-    style_targets = {}
+## 🧠 Core Concepts
 
-    # Build model and extract targets
-    for layer in cnn.children():
-        if isinstance(layer, nn.Conv2d):
-            i += 1
-            name = f'conv_{i}'
-        elif isinstance(layer, nn.ReLU):
-            name = f'relu_{i}'
-            layer = nn.ReLU(inplace=False)
-        elif isinstance(layer, nn.MaxPool2d):
-            name = f'pool_{i}'
-        else:
-            continue
+This project implements **two major approaches**:
 
-        model.add_module(name, layer)
+### 1. ⚡ Fast Style Transfer (Feed-Forward Network)
 
-        if name in content_layers:
-            content_targets[name] = model(content_img).detach()
+* Uses a trained **Transformer Network**
+* Performs style transfer in a **single forward pass**
+* Extremely fast (real-time)
 
-        if name in style_layers:
-            style_targets[name] = gram_matrix(model(style_img)).detach()
+### 2. 🧪 Optimization-Based Style Transfer
 
-    # Optimizer
-    optimizer = optim.LBFGS([input_img])
+* Uses **VGG19** as a feature extractor
+* Minimizes:
 
-    run = [0]
+  * **Content Loss** → preserves structure
+  * **Style Loss** → captures artistic texture using Gram Matrix
+* Uses **LBFGS optimizer** for iterative refinement
 
-    # -------------------------
-    # Optimization Loop
-    # -------------------------
-    while run[0] < steps:
+---
+## 🧪 Technical Highlights
 
-        def closure():
-            optimizer.zero_grad()
-            input_img.data.clamp_(0, 1)
+* Implemented Gram Matrix computation from scratch for style representation
+* Tuned content vs style weight trade-off for perceptual quality
+* Optimized inference speed using cached model loading in Streamlit
+* Handled model size constraints for cloud deployment
 
-            x = input_img
-            i = 0
+---
 
-            content_loss = 0
-            style_loss = 0
+## 🏗️ Tech Stack
 
-            for layer in model.children():
-                x = layer(x)
+* Python
+* PyTorch
+* Torchvision
+* Streamlit
+* Pillow (PIL)
+* NumPy
 
-                if isinstance(layer, nn.Conv2d):
-                    i += 1
-                    name = f'conv_{i}'
+---
 
-                    # Content loss
-                    if name in content_targets:
-                        content_loss += F.mse_loss(x, content_targets[name])
+## 📁 Project Structure
 
-                    # Style loss
-                    if name in style_targets:
-                        G = gram_matrix(x)
-                        style_loss += F.mse_loss(G, style_targets[name])
+```
+neural-transfer-project/
+│
+├── app.py                  # Streamlit UI
+├── style.py                # Style transfer logic
+├── transformer_net.py      # Fast style model architecture
+├── utils.py                # Image utilities
+├── vgg.py                  # VGG feature extractor
+│
+├── images/
+│   └── style-images/       # Style reference images
+│       ├── candy.jpg
+│       ├── mosaic.jpg
+│       ├── rain_princess.jpg
+│       └── udnie.jpg
+│
+├── saved_models/           # Pre-trained models (.pth)
+│       ├── candy.pth
+│       ├── mosaic.pth
+│       ├── rain_princess.pth
+│       └── udnie.pth
+│
+├── requirements.txt
+└── README.md
+```
 
-            loss = content_loss + style_weight * style_loss
-            loss.backward()
+---
 
-            run[0] += 1
+## ⚙️ Installation
 
-            # ✅ Progress callback
-            if callback:
-                callback(run[0], steps)
+```bash
+git clone https://github.com/your-username/neural-style-transfer-app.git
+cd neural-style-transfer-app
 
-            return loss
+pip install -r requirements.txt
+```
 
-        optimizer.step(closure)
+---
 
-    input_img.data.clamp_(0, 1)
-    return input_img.detach()
+## ▶️ Run the App
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## 📸 Example Output
+
+Transforms a normal image into an artistic painting style using deep neural networks.
+
+---
+
+## ⚡ Key Engineering Challenges
+
+* Cross-platform path issues (Windows vs Linux)
+* Managing large `.pth` model files
+* Handling image preprocessing and normalization
+* Debugging deployment errors on Streamlit Cloud
+* Efficient model loading and caching
+
+---
+
+## 💡 Key Learnings
+
+* Practical use of **CNN feature extraction (VGG19)**
+* Understanding **Gram Matrix for style representation**
+* Trade-offs between **speed vs quality** in ML systems
+* Importance of **file structure and deployment debugging**
+* Building end-to-end ML applications (not just models)
+
+---
+
+## 🚀 Future Improvements
+
+* Add more artistic styles dynamically
+* GPU acceleration support
+* Before/After slider comparison UI
+* Video style transfer
+* Convert into REST API + frontend
+* Deploy on scalable cloud platforms (AWS/GCP)
+
+---
+
+## 👤 Author
+
+**Bhavay Vij**
+
+---
+
+## ⭐ If you found this useful
+
+Give it a star ⭐ and try different styles!
