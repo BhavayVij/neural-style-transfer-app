@@ -30,7 +30,8 @@ st.markdown("<h3 style='text-align: right; color: Blue;'>by Bhavay Vij</h3>",
 # creating a side bar for picking the style of image
 style_name = st.sidebar.selectbox(
     'Select Style',
-    ("candy", "mosaic", "rain_princess", "udnie")
+    ("candy", "mosaic", "rain_princess", "udnie",
+     "tg", "demon_slayer", "ben_giles", "ben_giles_2")
 )
 path_style = os.path.join(root_style, style_name+".jpg")
 
@@ -58,8 +59,12 @@ extensions = [".png", ".jpeg", ".jpg"]
 if uploaded_file is not None and any(extension in uploaded_file.name for extension in extensions):
 
     name_file = uploaded_file.name.split(".")
-    root_model = "./saved_models"
+    # root_model = "./saved_models"
     model_path = os.path.join(root_model, style_name+".pth")
+
+    if not os.path.exists(model_path):
+        st.error(f"Model for '{style_name}' not found!")
+        st.stop()
 
     img = img.convert('RGB')
     input_image = img
