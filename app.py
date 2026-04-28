@@ -35,6 +35,8 @@ style_name = st.sidebar.selectbox(
 )
 path_style = os.path.join(root_style, style_name+".jpg")
 
+st.sidebar.image(path_style, caption=style_name)
+
 
 # Upload image functionality
 img = None
