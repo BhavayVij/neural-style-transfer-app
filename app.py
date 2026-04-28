@@ -5,7 +5,6 @@ import os
 from io import BytesIO
 import base64
 from streamlit_image_comparison import image_comparison
-
 # style image paths:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 root_style = os.path.join(BASE_DIR, "images", "style-images")
