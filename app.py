@@ -76,7 +76,10 @@ if uploaded_file is not None and any(extension in uploaded_file.name for extensi
 
         input_resized = input_image.resize(stylized.size)
 
-        st.write("### 🔍 Comparison: Original vs Stylized")
+        # 🔥 ADD THIS (top spacing)
+        st.markdown("---")
+
+        st.subheader("Interactive Style Comparison")
         st.caption("Drag the slider to compare the transformation")
 
         image_comparison(
@@ -90,6 +93,9 @@ if uploaded_file is not None and any(extension in uploaded_file.name for extensi
             make_responsive=True,
             in_memory=True
         )
+
+        # 🔥 ADD THIS (bottom spacing)
+        st.markdown("---")
 
         st.write("### Output Image")
         st.image(stylized, use_column_width=True)
